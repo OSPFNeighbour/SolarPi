@@ -1,0 +1,86 @@
+#!/usr/bin/python
+
+import serial
+import sqlite3 as lite
+import sys
+import time
+
+while True:
+    ser = serial.Serial(
+        port='/dev/ttyUSB0',\
+        baudrate=9600,\
+        parity=serial.PARITY_NONE,\
+        stopbits=serial.STOPBITS_ONE,\
+        bytesize=serial.EIGHTBITS,\
+            timeout=0)
+    
+    #print("connected to: " + ser.portstr)
+
+    #this will store the line
+    line = "";
+    
+    keepThis = ''
+    while line == "" :
+        data=keepThis + ser.read(ser.inWaiting()) # read no.of bytes in waiting
+        m = data.split("\n") # get the individual lines from input
+
+        if (len(m[-1])==0):    # true if only complete lines present (nothing after last newline)
+            processThis = m
+            keepThis = ''
+        else:
+            processThis = m[0:-1]   # skip incomplete line
+            keepThis = m[-1]        # fragment
+
+        # process the complete lines:
+        for lines in processThis:
+            if lines.startswith( '|S' ):
+                try :
+                    line = lines
+		    print(line)
+		    break
+                except :
+                    pass
+    
+    
+    
+    results = line.split("|")
+    
+    try:
+        con = lite.connect('pdu.sql')
+    
+        with con:
+            cur = con.cursor() 
+            for result in results:
+             source = ""
+             voltage = ""
+             if (result != "") and (result != '\r\n'):
+               if result[0] == "B":
+                 print("Battery: "+result.split(":")[1]+"V")
+                 source = "Battery"
+               elif result[0] == "S":
+                 print("Solar: "+result.split(":")[1]+"V")
+                 source = "Solar"
+               elif result[0] == "R":
+                 print("Regulator: "+result.split(":")[1]+"V")
+                 source = "Regulator"
+               elif result[0] == "W":
+                 print("Power: "+result.split(":")[1]+"mW")
+                 source = "Power"
+               if source != "":
+                  voltage = result.split(":")[1]
+                  cur.execute('INSERT INTO voltages (source,value) VALUES (?,?)',(source,voltage))
+                  con.commit()
+               ser.close()
+    except lite.Error, e:
+        
+        if con:
+            con.rollback()
+            
+        print "Error %s:" % e.args[0]
+        sys.exit(1)
+        
+    finally:
+        
+        if con:
+            con.close()
+    time.sleep(30)        
